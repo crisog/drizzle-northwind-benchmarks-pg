@@ -1,7 +1,7 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["referentialIntegrity"]
-  binaryTargets   = ["native", "rhel-openssl-1.0.x"]
+  previewFeatures = ["relationJoins"]
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -78,7 +78,6 @@ model Detail {
   productId String  @map("product_id") @db.VarChar()
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
 
   @@id([orderId, productId])
   @@map("order_details")

@@ -117,10 +117,9 @@ export const details = pgTable("order_details", {
 export const ordersRelations = relations(orders, (r) => {
   return {
     details: r.many(details),
-    products: r.many(products)
+    products: r.many(products),
   };
 });
-
 
 export const detailsRelations = relations(details, (r) => {
   return {
@@ -130,8 +129,8 @@ export const detailsRelations = relations(details, (r) => {
     }),
     product: r.one(products, {
       fields: [details.productId],
-      references: [products.id]
-    })
+      references: [products.id],
+    }),
   };
 });
 
@@ -144,13 +143,12 @@ export const employeesRelations = relations(employees, (r) => {
   };
 });
 
-export const productsRelations = relations(products, (r)=>{
+export const productsRelations = relations(products, (r) => {
   return {
     supplier: r.one(suppliers, {
       fields: [products.supplierId],
-      references: [suppliers.id]
+      references: [suppliers.id],
     }),
-    order: r.one(orders, )
-  }
-})
-
+    order: r.one(orders),
+  };
+});

@@ -1,27 +1,13 @@
 import { run, bench, group } from "mitata";
 import { eq, ilike, placeholder } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-// import { drizzle as drzl } from "drizzle-orm/node-postgres";
 import { drizzle as drzl } from "drizzle-orm/postgres-js";
 import { alias } from "drizzle-orm/pg-core";
 import pkg from "pg";
 import postgres from "postgres";
-import knex from "knex";
 import dotenv from "dotenv";
-import { Kysely, sql as k_sql, PostgresDialect } from "kysely";
-import { DataSource, ILike } from "typeorm";
-import { MikroORM } from "@mikro-orm/core";
-import { TsMorphMetadataProvider } from "@mikro-orm/reflection";
-import { PostgreSqlDriver } from "@mikro-orm/postgresql";
 import * as Prisma from "@prisma/client";
 
-import { Database } from "@/kysely/db";
-import { Customer } from "@/typeorm/entities/customers";
-import { Employee } from "@/typeorm/entities/employees";
-import { Supplier } from "@/typeorm/entities/suppliers";
-import { Order } from "@/typeorm/entities/orders";
-import { Product } from "@/typeorm/entities/products";
-import { Detail } from "@/typeorm/entities/details";
 import {
   employees,
   customers,
@@ -30,12 +16,6 @@ import {
   orders,
   details,
 } from "@/drizzle/schema";
-import { Customer as m_Customer } from "@/mikro/entities/customers";
-import { Detail as m_Detail } from "@/mikro/entities/details";
-import { Employee as m_Employee } from "@/mikro/entities/employees";
-import { Order as m_Order } from "@/mikro/entities/orders";
-import { Product as m_Product } from "@/mikro/entities/products";
-import { Supplier as m_Supplier } from "@/mikro/entities/suppliers";
 import {
   customerIds,
   employeeIds,
@@ -103,64 +83,8 @@ const drizzlePreparedPool = postgres(
 // await drizzlePreparedPool.connect();
 const drizzlePrepared = drzl(drizzlePreparedPool);
 
-// mikro connect
-const mikroOrm = await MikroORM.init<PostgreSqlDriver>({
-  type: "postgresql",
-  host: DB_HOST,
-  port: Number(DB_PORT || ports.mikroOrm),
-  user: DB_USER,
-  password: DB_PASSWORD,
-  dbName: DB_NAME,
-  entities: [m_Customer, m_Employee, m_Order, m_Supplier, m_Product, m_Detail],
-  metadataProvider: TsMorphMetadataProvider,
-});
-const mikro = mikroOrm.em.fork();
-
-// knex connect
-const knexDb = knex({
-  client: "pg",
-  connection: {
-    host: DB_HOST,
-    port: Number(DB_PORT || ports.knex),
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: DB_NAME,
-  },
-  useNullAsDefault: true,
-});
-
-// kysely connect
-const kysely = new Kysely<Database>({
-  dialect: new PostgresDialect({
-    pool: new pkg.Pool({
-      host: DB_HOST,
-      port: Number(DB_PORT || ports.kysely),
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-    }),
-  }),
-});
-
 // prisma connect
 const prisma = new Prisma.PrismaClient();
-
-// typeorm connect
-const typeorm = new DataSource({
-  type: "postgres",
-  host: DB_HOST,
-  port: Number(DB_PORT || ports.typeOrm),
-  username: DB_USER,
-  password: DB_PASSWORD,
-  database: DB_NAME,
-  entities: [Customer, Employee, Order, Supplier, Product, Detail],
-  synchronize: false,
-  logging: false,
-  extra: {
-    decimalNumbers: true,
-  },
-});
-await typeorm.initialize();
 
 group("select * from customer", () => {
   bench("pg", async () => {
@@ -190,23 +114,6 @@ group("select * from customer", () => {
 
   bench("drizzle:p", async () => {
     await prepared.execute();
-  });
-
-  bench("knex", async () => {
-    await knexDb("customers");
-  });
-
-  bench("kysely", async () => {
-    await kysely.selectFrom("customers").selectAll().execute();
-  });
-
-  bench("mikro", async () => {
-    await mikro.find(Customer, {});
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    await typeorm.getRepository(Customer).find();
   });
 
   bench("prisma", async () => {
@@ -254,40 +161,6 @@ group("select * from customer where id = ?", () => {
   bench("drizzle:p", async () => {
     for (const id of customerIds) {
       await prepared.execute({ userId: id });
-    }
-  });
-
-  bench("knex", async () => {
-    for (const id of customerIds) {
-      await knexDb("customers").where({ id });
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const id of customerIds) {
-      await kysely
-        .selectFrom("customers")
-        .selectAll()
-        .where("customers.id", "=", id)
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const id of customerIds) {
-      await mikro.findOne(m_Customer, { id });
-    }
-    mikro.clear();
-  });
-
-  const repo = typeorm.getRepository(Customer);
-  bench("typeorm", async () => {
-    for (const id of customerIds) {
-      await repo.findOne({
-        where: {
-          id,
-        },
-      });
     }
   });
 
@@ -350,42 +223,6 @@ group("select * from customer where company_name ilike ?", () => {
     }
   });
 
-  bench("knex", async () => {
-    for (const it of customerSearches) {
-      await knexDb("customers").whereILike("company_name", `%${it}%`);
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const it of customerSearches) {
-      await kysely
-        .selectFrom("customers")
-        .selectAll()
-        .where(k_sql`company_name`, "ilike", `%${it}%`)
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const it of customerSearches) {
-      await mikro.find(m_Customer, {
-        companyName: { $like: `%${it}%` },
-      });
-    }
-    mikro.clear();
-  });
-
-  const repo = typeorm.getRepository(Customer);
-  bench("typeorm", async () => {
-    for (const it of customerSearches) {
-      await typeorm.getRepository(Customer).find({
-        where: {
-          companyName: ILike(`%${it}%`),
-        },
-      });
-    }
-  });
-
   bench("prisma", async () => {
     for (const it of customerSearches) {
       await prisma.customer.findMany({
@@ -425,23 +262,6 @@ group('"SELECT * FROM employee"', () => {
 
   bench("drizzle:p", async () => {
     await prepared.execute();
-  });
-
-  bench("knex", async () => {
-    await knexDb("employees");
-  });
-
-  bench("kysely", async () => {
-    await kysely.selectFrom("employees").selectAll().execute();
-  });
-
-  bench("mikro", async () => {
-    await mikro.find(m_Employee, {});
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    await typeorm.getRepository(Employee).find();
   });
 
   bench("prisma", async () => {
@@ -498,86 +318,6 @@ group("select * from employee where id = ? left join reportee", () => {
     }
   });
 
-  bench("knex", async () => {
-    for (const id of employeeIds) {
-      await knexDb("employees as e1")
-        .select([
-          "e1.*",
-          "e2.id as e2_id",
-          "e2.last_name as e2_last_name",
-          "e2.first_name as e2_first_name",
-          "e2.title as e2_title",
-          "e2.title_of_courtesy as e2_title_of_courtesy",
-          "e2.birth_date as e2_birth_date",
-          "e2.hire_date as e2_hire_date",
-          "e2.address as e2_address",
-          "e2.city as e2_city",
-          "e2.postal_code as e2_postal_code",
-          "e2.country as e2_country",
-          "e2.home_phone as e2_home_phone",
-          "e2.extension as e2_extension",
-          "e2.notes as e2_notes",
-          "e2.recipient_id as e2_recipient_id",
-        ])
-        .where("e1.id", "=", id)
-        .leftJoin("employees as e2", "e1.recipient_id", "e2.id");
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const id of employeeIds) {
-      await kysely
-        .selectFrom("employees as e1")
-        .selectAll()
-        .where("e1.id", "=", id)
-        .leftJoin(
-          kysely
-            .selectFrom("employees as e2")
-            .select([
-              "id as e2_id",
-              "last_name as e2_last_name",
-              "first_name as e2_first_name",
-              "title as e2_title",
-              "title_of_courtesy as e2_title_of_courtesy",
-              "birth_date as e2_birth_date",
-              "hire_date as e2_hire_date",
-              "address as e2_address",
-              "city as e2_city",
-              "postal_code as e2_postal_code",
-              "country as e2_country",
-              "home_phone as e2_home_phone",
-              "extension as e2_extension",
-              "notes as e2_notes",
-              "recipient_id as e2_recipient_id",
-            ])
-            .as("e2"),
-          "e2.e2_id",
-          "e1.recipient_id"
-        )
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const id of employeeIds) {
-      await mikro.findOne(Employee, { id }, { populate: ["recipient"] });
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    for (const id of employeeIds) {
-      await typeorm.getRepository(Employee).findOne({
-        where: {
-          id,
-        },
-        relations: {
-          recipient: true,
-        },
-      });
-    }
-  });
-
   bench("prisma", async () => {
     for (const id of employeeIds) {
       await prisma.employee.findUnique({
@@ -617,23 +357,6 @@ group("SELECT * FROM supplier", () => {
 
   bench("drizzle:p", async () => {
     await prepared.execute();
-  });
-
-  bench("knex", async () => {
-    await knexDb("suppliers");
-  });
-
-  bench("kysely", async () => {
-    await kysely.selectFrom("suppliers").selectAll().execute();
-  });
-
-  bench("mikro", async () => {
-    await mikro.find(m_Supplier, {});
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    await typeorm.getRepository(Supplier).find();
   });
 
   bench("prisma", async () => {
@@ -679,35 +402,6 @@ group("select * from supplier where id = ?", () => {
     }
   });
 
-  bench("knex", async () => {
-    for (const id of supplierIds) {
-      await knexDb("suppliers").where({ id }).first();
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const id of supplierIds) {
-      await kysely
-        .selectFrom("suppliers")
-        .selectAll()
-        .where("suppliers.id", "=", id)
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const id of supplierIds) {
-      await mikro.findOne(m_Supplier, { id });
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    for (const id of supplierIds) {
-      await typeorm.getRepository(Supplier).findOneBy({ id });
-    }
-  });
-
   bench("prisma", async () => {
     for (const id of supplierIds) {
       await prisma.supplier.findUnique({
@@ -744,23 +438,6 @@ group("SELECT * FROM product", () => {
 
   bench("drizzle:p", async () => {
     await prepared.execute();
-  });
-
-  bench("knex", async () => {
-    await knexDb("products");
-  });
-
-  bench("kysely", async () => {
-    await kysely.selectFrom("products").selectAll().execute();
-  });
-
-  bench("mikro", async () => {
-    await mikro.find(m_Product, {});
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    await typeorm.getRepository(Product).find();
   });
 
   bench("prisma", async () => {
@@ -815,74 +492,22 @@ group("SELECT * FROM product LEFT JOIN supplier WHERE product.id = ?", () => {
     }
   });
 
-  bench("knex", async () => {
+  bench("prisma", async () => {
     for (const id of productIds) {
-      await knexDb("products")
-        .select([
-          "products.*",
-          "suppliers.id as s_id",
-          "company_name",
-          "contact_name",
-          "contact_title",
-          "address",
-          "city",
-          "region",
-          "postal_code",
-          "country",
-          "phone",
-        ])
-        .where("products.id", "=", id)
-        .leftJoin("suppliers", "suppliers.id", "products.supplier_id");
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const id of productIds) {
-      await kysely
-        .selectFrom("products")
-        .selectAll()
-        .where("products.id", "=", id)
-        .leftJoin(
-          kysely
-            .selectFrom("suppliers")
-            .select([
-              "id as s_id",
-              "company_name",
-              "contact_name",
-              "contact_title",
-              "address",
-              "city",
-              "region",
-              "postal_code",
-              "country",
-              "phone",
-            ])
-            .as("s1"),
-          "s1.s_id",
-          "products.supplier_id"
-        )
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const id of productIds) {
-      await mikro.findOne(m_Product, { id }, { populate: ["supplier"] });
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    for (const id of productIds) {
-      await typeorm.getRepository(Product).findOne({
+      await prisma.product.findUnique({
         where: {
           id,
         },
-        relations: ["supplier"],
+        include: {
+          supplier: true,
+        },
       });
     }
   });
+});
 
+//
+group("SELECT * FROM product WHERE product.name ILIKE ?", () => {
   bench("prisma", async () => {
     for (const id of productIds) {
       await prisma.product.findUnique({
@@ -937,41 +562,6 @@ group("SELECT * FROM product WHERE product.name ILIKE ?", () => {
   bench("drizzle:p", async () => {
     for (const it of productSearches) {
       await prepared.execute({ name: `%${it}%` });
-    }
-  });
-
-  bench("knex", async () => {
-    for (const it of productSearches) {
-      await knexDb("products").whereILike("name", `%${it}%`);
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const it of productSearches) {
-      await kysely
-        .selectFrom("products")
-        .selectAll()
-        .where(k_sql`name`, "ilike", `%${it}%`)
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const it of productSearches) {
-      await mikro.find(m_Product, {
-        name: { $ilike: `%${it}%` },
-      });
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    for (const it of productSearches) {
-      await typeorm.getRepository(Product).find({
-        where: {
-          name: ILike(`%${it}%`),
-        },
-      });
     }
   });
 
@@ -1045,114 +635,39 @@ group("select all order with sum and count", () => {
     await prepared.execute();
   });
 
-  bench("knex", async () => {
-    await knexDb("orders")
-      .select([
-        "orders.id",
-        "orders.shipped_date",
-        "orders.ship_name",
-        "orders.ship_city",
-        "orders.ship_country",
-      ])
-      .leftJoin("order_details", "order_details.order_id", "orders.id")
-      .count("product_id as products_count")
-      .sum("quantity as quantity_sum")
-      .sum({ total_price: knexDb.raw("?? * ??", ["quantity", "unit_price"]) })
-      .groupBy("orders.id");
-  });
-
-  bench("kysely", async () => {
-    await kysely
-      .selectFrom("orders")
-      .select([
-        "orders.id",
-        "orders.shipped_date",
-        "orders.ship_name",
-        "orders.ship_city",
-        "orders.ship_country",
-        kysely.fn.count("product_id").as("products_count"),
-        kysely.fn.sum("quantity").as("quantity_sum"),
-        k_sql`SUM(quantity * unit_price)`.as("total_price"),
-      ])
-      .leftJoin("order_details", "order_details.order_id", "orders.id")
-      .groupBy("orders.id")
-      .execute();
-  });
-
-  bench("mikro", async () => {
-    const result = await mikro.find(m_Order, {}, { populate: ["details"] });
-    const orders = result.map((item) => {
-      const details = item.details.getItems();
-      return {
-        id: item.id,
-        shippedDate: item.shippedDate,
-        shipName: item.shipName,
-        shipCity: item.shipCity,
-        shipCountry: item.shipCountry,
-        productsCount: item.details.length,
-        quantitySum: details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity),
-          0
-        ),
-        totalPrice: details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-          0
-        ),
-      };
-    });
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    const result = await typeorm.getRepository(Order).find({
-      relations: {
-        details: true,
-      },
-    });
-    const orders = result.map((item) => {
-      return {
-        id: item.id,
-        shippedDate: item.shippedDate,
-        shipName: item.shipName,
-        shipCity: item.shipCity,
-        shipCountry: item.shipCountry,
-        productsCount: item.details.length,
-        quantitySum: item.details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity),
-          0
-        ),
-        totalPrice: item.details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-          0
-        ),
-      };
-    });
-  });
-
   bench("prisma", async () => {
     const result = await prisma.order.findMany({
       include: {
         details: true,
       },
     });
-    const orders = result.map((item) => {
-      return {
-        id: item.id,
-        shippedDate: item.shippedDate,
-        shipName: item.shipName,
-        shipCity: item.shipCity,
-        shipCountry: item.shipCountry,
-        productsCount: item.details.length,
-        quantitySum: item.details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity),
-          0
-        ),
-        totalPrice: item.details.reduce(
-          (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-          0
-        ),
-      };
-    });
+    const orders = result.map(
+      (item: {
+        id: any;
+        shippedDate: any;
+        shipName: any;
+        shipCity: any;
+        shipCountry: any;
+        details: any[];
+      }) => {
+        return {
+          id: item.id,
+          shippedDate: item.shippedDate,
+          shipName: item.shipName,
+          shipCity: item.shipCity,
+          shipCountry: item.shipCountry,
+          productsCount: item.details.length,
+          quantitySum: item.details.reduce(
+            (sum, deteil) => (sum += +deteil.quantity),
+            0
+          ),
+          totalPrice: item.details.reduce(
+            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
+            0
+          ),
+        };
+      }
+    );
   });
 });
 
@@ -1170,7 +685,7 @@ group("select order with sum and count using limit with offset", () => {
       );
 
       offset += limit;
-      if (result.rowCount < limit) break;
+      if (result.rowCount && result.rowCount < limit) break;
     }
   });
 
@@ -1186,7 +701,7 @@ group("select order with sum and count using limit with offset", () => {
     while (true) {
       const result = await pgPrepared.query(query, [limit, offset]);
       offset += limit;
-      if (result.rowCount < limit) break;
+      if (result.rowCount && result.rowCount < limit) break;
     }
   });
 
@@ -1246,128 +761,6 @@ group("select order with sum and count using limit with offset", () => {
     }
   });
 
-  bench("knex", async () => {
-    let offset = 0;
-    while (true) {
-      const result = await knexDb("orders")
-        .select([
-          "orders.id",
-          "orders.shipped_date",
-          "orders.ship_name",
-          "orders.ship_city",
-          "orders.ship_country",
-        ])
-        .leftJoin("order_details", "order_details.order_id", "orders.id")
-        .count("product_id as products_count")
-        .sum("quantity as quantity_sum")
-        .sum({ total_price: knexDb.raw("?? * ??", ["quantity", "unit_price"]) })
-        .groupBy("orders.id")
-        .orderBy("orders.id")
-        .limit(limit)
-        .offset(offset);
-
-      offset += limit;
-      if (result.length < limit) break;
-    }
-  });
-
-  bench("kysely", async () => {
-    let offset = 0;
-    while (true) {
-      const result = await kysely
-        .selectFrom("orders")
-        .select([
-          "orders.id",
-          "orders.shipped_date",
-          "orders.ship_name",
-          "orders.ship_city",
-          "orders.ship_country",
-          kysely.fn.count("product_id").as("products_count"),
-          kysely.fn.sum("quantity").as("quantity_sum"),
-          k_sql`SUM(quantity * unit_price)`.as("total_price"),
-        ])
-        .leftJoin("order_details", "order_details.order_id", "orders.id")
-        .groupBy("orders.id")
-        .orderBy("orders.id")
-        .limit(limit)
-        .offset(offset)
-        .execute();
-
-      offset += limit;
-      if (result.length < limit) break;
-    }
-  });
-
-  bench("mikro", async () => {
-    let offset = 0;
-    while (true) {
-      const result = await mikro.find(
-        m_Order,
-        {},
-        { populate: ["details"], limit, offset, orderBy: { id: "ASC" } }
-      );
-      const orders = result.map((item) => {
-        const details = item.details.getItems();
-        return {
-          id: item.id,
-          shippedDate: item.shippedDate,
-          shipName: item.shipName,
-          shipCity: item.shipCity,
-          shipCountry: item.shipCountry,
-          productsCount: item.details.length,
-          quantitySum: details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
-            0
-          ),
-          totalPrice: details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-            0
-          ),
-        };
-      });
-      offset += limit;
-      if (result.length < limit) break;
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    let offset = 0;
-    while (true) {
-      const result = await typeorm.getRepository(Order).find({
-        relations: {
-          details: true,
-        },
-        order: {
-          id: "ASC",
-        },
-        take: limit,
-        skip: offset,
-      });
-      const orders = result.map((item) => {
-        return {
-          id: item.id,
-          shippedDate: item.shippedDate,
-          shipName: item.shipName,
-          shipCity: item.shipCity,
-          shipCountry: item.shipCountry,
-          productsCount: item.details.length,
-          quantitySum: item.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
-            0
-          ),
-          totalPrice: item.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-            0
-          ),
-        };
-      });
-
-      offset += limit;
-      if (result.length < limit) break;
-    }
-  });
-
   bench("prisma", async () => {
     let offset = 0;
     while (true) {
@@ -1381,7 +774,7 @@ group("select order with sum and count using limit with offset", () => {
         take: limit,
         skip: offset,
       });
-      const orders = result.map((item) => {
+      const orders = result.map((item: any) => {
         return {
           id: item.id,
           shippedDate: item.shippedDate,
@@ -1390,11 +783,12 @@ group("select order with sum and count using limit with offset", () => {
           shipCountry: item.shipCountry,
           productsCount: item.details.length,
           quantitySum: item.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
+            (sum: any, deteil: any) => (sum += +deteil.quantity),
             0
           ),
           totalPrice: item.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
+            (sum: any, deteil: any) =>
+              (sum += +deteil.quantity * +deteil.unitPrice),
             0
           ),
         };
@@ -1513,140 +907,6 @@ group("select order where order.id = ? with sum and count", () => {
     );
   });
 
-  bench("knex", async () => {
-    await Promise.all(
-      orderIds.map(async (id) => {
-        await knexDb("orders")
-          .select([
-            "orders.id",
-            "orders.shipped_date",
-            "orders.ship_name",
-            "orders.ship_city",
-            "orders.ship_country",
-          ])
-          .leftJoin("order_details", "order_details.order_id", "orders.id")
-          .where("orders.id", "=", id)
-          .count("product_id as products_count")
-          .sum("quantity as quantity_sum")
-          .sum({
-            total_price: knexDb.raw("?? * ??", ["quantity", "unit_price"]),
-          })
-          .groupBy("orders.id");
-      })
-    );
-    // for (const id of orderIds) {
-    //   await knexDb("orders")
-    //     .select([
-    //       "orders.id",
-    //       "orders.shipped_date",
-    //       "orders.ship_name",
-    //       "orders.ship_city",
-    //       "orders.ship_country",
-    //     ])
-    //     .leftJoin("order_details", "order_details.order_id", "orders.id")
-    //     .where("orders.id", "=", id)
-    //     .count("product_id as products_count")
-    //     .sum("quantity as quantity_sum")
-    //     .sum({ total_price: knexDb.raw("?? * ??", ["quantity", "unit_price"]) })
-    //     .groupBy("orders.id")
-    // }
-  });
-
-  bench("kysely", async () => {
-    await Promise.all(
-      orderIds.map(async (id) => {
-        await kysely
-          .selectFrom("orders")
-          .select([
-            "orders.id",
-            "orders.shipped_date",
-            "orders.ship_name",
-            "orders.ship_city",
-            "orders.ship_country",
-            kysely.fn.count("product_id").as("products_count"),
-            kysely.fn.sum("quantity").as("quantity_sum"),
-            k_sql`SUM(quantity * unit_price)`.as("total_price"),
-          ])
-          .leftJoin("order_details", "order_details.order_id", "orders.id")
-          .where("orders.id", "=", id)
-          .groupBy("orders.id")
-          .execute();
-      })
-    );
-
-    // for (const id of orderIds) {
-    //   await kysely
-    //     .selectFrom("orders")
-    //     .select([
-    //       "orders.id",
-    //       "orders.shipped_date",
-    //       "orders.ship_name",
-    //       "orders.ship_city",
-    //       "orders.ship_country",
-    //       kysely.fn.count("product_id").as("products_count"),
-    //       kysely.fn.sum("quantity").as("quantity_sum"),
-    //       k_sql`SUM(quantity * unit_price)`.as("total_price"),
-    //     ])
-    //     .leftJoin("order_details", "order_details.order_id", "orders.id")
-    //     .where("orders.id", "=", id)
-    //     .groupBy("orders.id")
-    //     .execute();
-    // }
-  });
-
-  bench("mikro", async () => {
-    await Promise.all(
-      orderIds.map(async (id) => {
-        const result = await mikro.findOne(
-          m_Order,
-          { id },
-          { populate: ["details"] }
-        );
-        const details = result!.details.getItems();
-        const order = {
-          id: result!.id,
-          shippedDate: result!.shippedDate,
-          shipName: result!.shipName,
-          shipCity: result!.shipCity,
-          shipCountry: result!.shipCountry,
-          productsCount: result!.details.length,
-          quantitySum: details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
-            0
-          ),
-          totalPrice: details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-            0
-          ),
-        };
-      })
-    );
-    // for (const id of orderIds) {
-    //   const result = await mikro.findOne(
-    //     m_Order,
-    //     { id },
-    //     { populate: ["details"] }
-    //   );
-    //   const details = result!.details.getItems()
-    //   const order = {
-    //     id: result!.id,
-    //     shippedDate: result!.shippedDate,
-    //     shipName: result!.shipName,
-    //     shipCity: result!.shipCity,
-    //     shipCountry: result!.shipCountry,
-    //     productsCount: result!.details.length,
-    //     quantitySum: details
-    //       .reduce((sum, deteil) => (sum += +deteil.quantity), 0),
-    //     totalPrice: details
-    //       .reduce(
-    //         (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-    //         0
-    //       ),
-    //   };
-    // }
-    mikro.clear();
-  });
-
   bench("prisma", async () => {
     await Promise.all(
       orderIds.map(async (id) => {
@@ -1666,11 +926,12 @@ group("select order where order.id = ? with sum and count", () => {
           shipCountry: result!.shipCountry,
           productsCount: result!.details.length,
           quantitySum: result!.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
+            (sum: any, deteil: any) => (sum += +deteil.quantity),
             0
           ),
           totalPrice: result!.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
+            (sum: any, deteil: any) =>
+              (sum += +deteil.quantity * +deteil.unitPrice),
             0
           ),
         };
@@ -1679,63 +940,6 @@ group("select order where order.id = ? with sum and count", () => {
     // for (const id of orderIds) {
     //   const result = await prisma.order.findFirst({
     //     include: {
-    //       details: true,
-    //     },
-    //     where: {
-    //       id,
-    //     },
-    //   });
-    //   const order = {
-    //     id: result!.id,
-    //     shippedDate: result!.shippedDate,
-    //     shipName: result!.shipName,
-    //     shipCity: result!.shipCity,
-    //     shipCountry: result!.shipCountry,
-    //     productsCount: result!.details.length,
-    //     quantitySum: result!.details.reduce(
-    //       (sum, deteil) => (sum += +deteil.quantity),
-    //       0
-    //     ),
-    //     totalPrice: result!.details.reduce(
-    //       (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-    //       0
-    //     ),
-    //   };
-    // }
-  });
-
-  bench("typeorm", async () => {
-    await Promise.all(
-      orderIds.map(async (id) => {
-        const result = await typeorm.getRepository(Order).findOne({
-          relations: {
-            details: true,
-          },
-          where: {
-            id,
-          },
-        });
-        const order = {
-          id: result!.id,
-          shippedDate: result!.shippedDate,
-          shipName: result!.shipName,
-          shipCity: result!.shipCity,
-          shipCountry: result!.shipCountry,
-          productsCount: result!.details.length,
-          quantitySum: result!.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity),
-            0
-          ),
-          totalPrice: result!.details.reduce(
-            (sum, deteil) => (sum += +deteil.quantity * +deteil.unitPrice),
-            0
-          ),
-        };
-      })
-    );
-    // for (const id of orderIds) {
-    //   const result = await typeorm.getRepository(Order).findOne({
-    //     relations: {
     //       details: true,
     //     },
     //     where: {
@@ -1812,104 +1016,6 @@ group("SELECT * FROM order_detail WHERE order_id = ?", () => {
   bench("drizzle:p", async () => {
     for (const id of orderIds) {
       await prepared.execute({ orderId: id });
-    }
-  });
-
-  bench("knex", async () => {
-    for (const id of orderIds) {
-      await knexDb("orders")
-        .select([
-          "order_details.*",
-          "orders.id as o_id",
-          "order_date",
-          "required_date",
-          "shipped_date",
-          "ship_via",
-          "freight",
-          "ship_name",
-          "ship_city",
-          "ship_region",
-          "ship_postal_code",
-          "ship_country",
-          "customer_id",
-          "employee_id",
-          "products.id as p_id",
-          "name",
-          "qt_per_unit",
-          "products.unit_price as p_unit_price",
-          "units_in_stock",
-          "units_on_order",
-          "reorder_level",
-          "discontinued",
-          "supplier_id",
-        ])
-        .where("orders.id", "=", id)
-        .leftJoin("order_details", "order_details.order_id", "orders.id")
-        .leftJoin("products", "products.id", "order_details.product_id");
-    }
-  });
-
-  bench("kysely", async () => {
-    for (const id of orderIds) {
-      await kysely
-        .selectFrom("orders")
-        .selectAll()
-        .where("id", "=", id)
-        .leftJoin(
-          kysely
-            .selectFrom("order_details")
-            .select([
-              "discount",
-              "order_id",
-              "product_id",
-              "unit_price",
-              "quantity",
-            ])
-            .as("od"),
-          "od.order_id",
-          "orders.id"
-        )
-        .leftJoin(
-          kysely
-            .selectFrom("products")
-            .select([
-              "products.id as p_id",
-              "name",
-              "qt_per_unit",
-              "products.unit_price as p_unit_price",
-              "units_in_stock",
-              "units_on_order",
-              "reorder_level",
-              "discontinued",
-              "supplier_id",
-            ])
-            .as("p"),
-          "p.p_id",
-          "od.product_id"
-        )
-        .execute();
-    }
-  });
-
-  bench("mikro", async () => {
-    for (const id of orderIds) {
-      await mikro.find(
-        m_Order,
-        { id },
-        { populate: ["details", "details.product"] }
-      );
-    }
-    mikro.clear();
-  });
-
-  bench("typeorm", async () => {
-    for (const id of orderIds) {
-      await typeorm.getRepository(Order).find({
-        relations: ["details", "details.product"],
-        where: {
-          id,
-        },
-      });
     }
   });
 

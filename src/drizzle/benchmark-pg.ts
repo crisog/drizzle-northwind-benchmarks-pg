@@ -27,7 +27,7 @@ import {
 import { alias } from "drizzle-orm/pg-core";
 import { NodePgDatabase, drizzle as drzl } from "drizzle-orm/node-postgres";
 import * as pg from "pg";
-const { Pool } = pg.default;
+const { Pool } = pg;
 
 dotenv.config();
 // const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -213,7 +213,7 @@ const main = async () => {
   drizzle = drzl(pool);
 
   await run();
-  process.exit(0)
+  process.exit(0);
 };
 
 main();

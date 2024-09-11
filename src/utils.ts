@@ -1,6 +1,5 @@
 import Docker from "dockerode";
 import { v4 as uuid } from "uuid";
-import getPort from "get-port";
 import pkg from "pg";
 import path from "node:path";
 import fs from "fs";
@@ -29,9 +28,11 @@ export async function createDockerDBs(ports: {
   const docker = new Docker();
   const image = "postgres";
   const pullStream = await docker.pull(image);
-	await new Promise((resolve, reject) =>
-		docker.modem.followProgress(pullStream, (err) => (err ? reject(err) : resolve(err)))
-	);
+  await new Promise((resolve, reject) =>
+    docker.modem.followProgress(pullStream, (err) =>
+      err ? reject(err) : resolve(err)
+    )
+  );
   const dockerDBs: DockerDBs[] = [];
   await Promise.all(
     Object.values(ports).map(async (port) => {
